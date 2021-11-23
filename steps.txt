@@ -1,0 +1,14 @@
+1. Loop through each of our specified currencies
+2. Calculate the lookback length based on the volatility(higher volatility, higher lookback length)
+    volatility will be based on the standard deviation (use numpy)
+3. The highest price in the history of the lookback is the breakout level
+4. If in breakout range and not in position -> buy
+5. else if not in breakout range -> do nothing
+6. For each position, set a trailing stop-loss order with a specified percentage of loss (i.e. 10 % )
+7. Track price of currency
+8. Compare current price with last stored price
+9. If price goes up -> hodl and update stored price
+10. else if price goes down, then check percentage loss
+11. if percentage loss >= stop-loss -> sell
+else hodl!!
+12. Rinse and repeat
