@@ -41,11 +41,12 @@ class CoinbaseWallet(AuthBase):
     def __init__(self, api_key, api_secret, api_pass, api_url):
         self.__auth_client = cbpro.AuthenticatedClient(
             api_key, api_secret, api_pass, api_url)  # initialize client
+        self.balance = 10000
         self.lookback = 20
         self.ceiling, self.floor = 30, 10
         self.initialStopRisk = 0.98
         self.trailingStopRisk = 0.9
-        self.positions = []
+        self.positions = ['BTC-USD', 'LINK-USD']
 
     def __call__(self):
         print(json.dumps(self.__auth_client.get_product_ticker('BTC-USD'), indent=2))
@@ -59,16 +60,20 @@ class CoinbaseWallet(AuthBase):
         print(json.dumps(self.positions, indent=2))
 
     def onMarketOpen(self):
-        # step 1: calculate standard deviation of data from past 30 days
+        # step 1: calculate standard deviation of data from past 31 days
         start_date = (datetime.datetime.now() -
-                      datetime.timedelta(30)).isoformat()
-        end_date = datetime.datetime.now().isoformat()
+                      datetime.timedelta(31)).isoformat()  # date from 31 days ago
+        end_date = datetime.datetime.now().isoformat()  # todays' date
         historic_rates = self.__auth_client.get_product_historic_rates(
-            'BTC-USD', start=start_date, end=end_date, granularity=21600)
+            'BTC-USD', start=start_date, end=end_date, granularity=21600)  # prices from past 31 days
 
         df = pd.DataFrame(historic_rates, columns=[
                           'time', 'low', 'high', 'open', 'close', 'volume'])
-        std_dev = df['close'].std()
+        today_vol = df['close'][1:31].std()  # today's volatility
+        yesterday_vol = df['close'][0:30].std()  # yestereday's volatility
+        # normalized difference in volatility
+        delta_vol = (today_vol - yesterday_vol) / today_vol
+        self.lookback = round(self.lookback * (1 + delta_vol))
 
     # def getHistory(self):
     #     accounts = self.__auth_client.get_accounts()

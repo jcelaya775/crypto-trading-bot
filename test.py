@@ -1,4 +1,10 @@
-import datetime
+import json
+import hmac
+import hashlib
+import time
+import requests
+from requests.auth import AuthBase
 
-start_date = (datetime.datetime.now() - datetime.timedelta(30)).isoformat()
-print(start_date.isoformat())
+
+signature = hmac.new(secret_key, message, hashlib.sha256).hexdigest()
+print(str(int(time.time())))
