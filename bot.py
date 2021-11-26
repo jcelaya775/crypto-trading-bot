@@ -39,53 +39,60 @@ class CoinbaseWallet(AuthBase):
     stablecoins = []
 
     def __init__(self, api_key, api_secret, api_pass, api_url):
-        self.__auth_client = cbpro.AuthenticatedClient(
+        self.auth = cbpro.AuthenticatedClient(
             api_key, api_secret, api_pass, api_url)  # initialize client
-        self.balance = 10000
+        # self.balance =  # current account balance
         self.lookback = 20
-        self.ceiling, self.floor = 30, 10
+        self.ceiling, self.floor = 30, 10  # upper and lower lookback limits
         self.initialStopRisk = 0.98
         self.trailingStopRisk = 0.9
-        self.positions = ['BTC-USD', 'LINK-USD']
+        self.securities = self.getSecurities()
+        self.positions = []
+
+        print(json.dumps(self.auth.get_product_ticker('BTC-USD'), indent=2))
+        # add an infinite loop that runs onMarketOpen continuously
 
     def __call__(self):
-        print(json.dumps(self.__auth_client.get_product_ticker('BTC-USD'), indent=2))
+        print(json.dumps(self.auth.get_product_ticker('BTC-USD'), indent=2))
 
-    def getPositions(self):
-        accounts = self.__auth_client.get_accounts()
+    def getSecurities(self):
+        securities = ['BTC-USD', 'LINK-USD']
+        rv = []
 
-        for account in accounts:
-            self.positions.append(account)
+        for security in securities:
+            rv.append(self.auth.get_product_ticker(security))
 
-        print(json.dumps(self.positions, indent=2))
+        return rv
 
     def onMarketOpen(self):
         # step 1: calculate standard deviation of data from past 31 days
         start_date = (datetime.datetime.now() -
                       datetime.timedelta(31)).isoformat()  # date from 31 days ago
         end_date = datetime.datetime.now().isoformat()  # todays' date
-        historic_rates = self.__auth_client.get_product_historic_rates(
-            'BTC-USD', start=start_date, end=end_date, granularity=21600)  # prices from past 31 days
 
-        df = pd.DataFrame(historic_rates, columns=[
-                          'time', 'low', 'high', 'open', 'close', 'volume'])
-        today_vol = df['close'][1:31].std()  # today's volatility
-        yesterday_vol = df['close'][0:30].std()  # yestereday's volatility
-        # normalized difference in volatility
-        delta_vol = (today_vol - yesterday_vol) / today_vol
-        self.lookback = round(self.lookback * (1 + delta_vol))
+        for security in self.securities:
+            historic_rates = self.auth.get_product_historic_rates(
+                security, start=start_date, end=end_date, granularity=21600)  # prices from past 31 days
+            df = pd.DataFrame(historic_rates, columns=[
+                'time', 'low', 'high', 'open', 'close', 'volume'])
 
-    # def getHistory(self):
-    #     accounts = self.__auth_client.get_accounts()
+            today_vol = df['close'][1:31].std()  # today's volatility
+            yesterday_vol = df['close'][0:30].std()  # yestereday's volatility
+            print(today_vol, yesterday_vol)
+            delta_vol = (today_vol - yesterday_vol) / \
+                today_vol  # difference in volatility
+            # adjusted lookback length
+            self.lookback = round(self.lookback * (1 + delta_vol))
 
-    #     for acc in accounts:
-    #         currency = acc.get('currency')
-    #         if currency == 'BTC':
-    #             acc_id = acc.get('id')
+            # ensure that lookback is within upper and lower bounds
+            if self.lookback > self.ceiling:
+                self.lookback = self.ceiling
+            if self.lookback < self.floor:
+                self.lookback = self.floor
 
-    #     acc_history = self.__auth_client.get_account_history(acc_id)
-    #     for hist in acc_history:
-    #         print(json.dumps(hist, indent=2))
+            self.high = df['high']
+            # if security not in self.positions and security['close'] >= max(self.high[:-1]):
+            #     print('buy')
 
 
 def main():
