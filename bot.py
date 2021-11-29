@@ -42,8 +42,8 @@ class CoinbaseWallet(AuthBase):
         self.auth = cbpro.AuthenticatedClient(
             api_key, api_secret, api_pass, api_url)  # initialize client
         self.balance = self.getBalance()
-        self.lookback = 20
-        self.ceiling, self.floor = 30, 10  # upper and lower lookback limits
+        self.lookback = 5
+        self.ceiling, self.floor = 10, 1  # upper and lower lookback limits
         self.initialStopRisk = 0.98
         self.trailingStopRisk = 0.9
         self.ticker = 'BTC-USD'
@@ -62,23 +62,23 @@ class CoinbaseWallet(AuthBase):
     def update(self):
         self.orders = list(self.auth.get_orders())
         if len(self.orders) == 0:
+            if self.invested == True:
+                sellPrice = '{:.2f}'.format(self.auth.get_fills(
+                    product_id=self.ticker)[-1]['price'])
+                print(f'Sold BTC at ${sellPrice}!')
             self.invested = False
         self.balance = self.getBalance()
 
-    def buy(self):
-        self.auth.place_market_order(product_id='BTC-USD',
-                                     side='buy',
-                                     funds='1000.00')
-
-    def onMarketOpen(self):
+    def execMarket(self):
         self.update()  # update fields
+        print('bot is running...')
 
         # step 1: calculate standard deviation of data from past 31 days
         start_date = (datetime.datetime.now() -
                       datetime.timedelta(31)).isoformat()  # date from 31 days ago
         end_date = datetime.datetime.now().isoformat()  # todays' date
         historic_rates = self.auth.get_product_historic_rates(
-            self.security, start=start_date, end=end_date, granularity=21600)  # prices from past 31 days
+            self.ticker, start=start_date, end=end_date, granularity=21600)  # prices from past 31 days
         df = pd.DataFrame(historic_rates, columns=[
             'time', 'low', 'high', 'open', 'close', 'volume'])
 
@@ -86,8 +86,8 @@ class CoinbaseWallet(AuthBase):
         yesterday_vol = df['close'][0:30].std()  # yestereday's volatility
         delta_vol = (today_vol - yesterday_vol) / \
             today_vol  # difference in volatility
-        # adjusted lookback length
 
+        # adjusted lookback length
         self.lookback = round(self.lookback * (1 + delta_vol))
 
         # ensure that lookback is within upper and lower bounds
@@ -95,31 +95,35 @@ class CoinbaseWallet(AuthBase):
             self.lookback = self.ceiling
         if self.lookback < self.floor:
             self.lookback = self.floor
-        self.high = df['high']
+
+        currentPrice = float(self.security['price'])
 
         # if not in position and entered breakout level
-        if not self.invested and self.security['close'] >= max(self.high[:-1]):
+        if not self.invested and currentPrice >= max(df['high'][:-1]):
             # execute a limit buy order
-            order_size = self.balance / self.security['close']
+            order_size = self.balance / currentPrice
             self.auth.place_limit_order(
-                product_id=self.ticker, side='buy', price=self.security['close'], size=order_size)
-            self.breakoutlvl = max(self.high[:-1])
+                product_id=self.ticker, side='buy', price=currentPrice, size=order_size)
+            self.breakoutlvl = max(df['high'][:-1])
             self.invested = True
+
+            str = '{:.2f}'.format(currentPrice)
+            print(f'Bought BTC for ${str}!')
 
         if self.invested:
             # if no open sell orders -> place limit sell order
-            if self.security and len(self.orders) == 0:
+            order_size = float(self.security['size'])
+
+            if df and len(self.orders) == 0:
                 self.initialStopPrice = self.breakoutlvl * self.initialStopRisk
-                order_size = self.balance / self.initialStopPrice
                 self.auth.place_limit_order(
                     product_id=self.ticker, side='sell', price=self.intitalStopPrice, size=order_size)
 
             # if price continues to move beyond initial buy price -> update highest price and trailing stop price
-            if self.security['close'] > self.high and self.initialStopPrice < self.security['close'] * self.trailingStopRisk:
+            if currentPrice > self.high and self.initialStopPrice < currentPrice * self.trailingStopRisk:
                 # update variables
-                self.high = self.security['close']
+                self.high = currentPrice
                 self.adjustedStopPrice = self.high * self.trailingStopRisk
-                order_size = self.balance / self.adjustedStopPrice
 
                 # update order
                 self.auth.cancel_all()
@@ -128,8 +132,8 @@ class CoinbaseWallet(AuthBase):
 
     def launch(self):
         while True:
-            self.onMarketOpen()
-            time.sleep(10)
+            self.execMarket()
+            time.sleep(3)
 
 
 def main():

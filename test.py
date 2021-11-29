@@ -1,5 +1,4 @@
 import time
 
-while True:
-    time.sleep(1)
-    print('hello')
+price = 640000.32000024203
+print(float('{:.2f}'.format(price)))
