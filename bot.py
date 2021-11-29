@@ -63,6 +63,12 @@ class CoinbaseWallet(AuthBase):
             rv.append(self.auth.get_product_ticker(security))
 
         return rv
+    
+    def getCurrentPrice(self, security):
+        None
+        
+    def getOrderSize(self):
+        None
 
     def onMarketOpen(self):
         # step 1: calculate standard deviation of data from past 31 days
@@ -91,8 +97,20 @@ class CoinbaseWallet(AuthBase):
                 self.lookback = self.floor
 
             self.high = df['high']
-            # if security not in self.positions and security['close'] >= max(self.high[:-1]):
-            #     print('buy')
+            if security not in self.positions and security['close'] >= max(self.high[:-1]): # entered breakout and not in position
+                print('buy') # set stop order
+                # calculate current price and size of order
+                current_price = getCurrentPrice(security)
+                quantity = getOrderSize()
+                self.auth.buy(price=current_price,
+                              size = None,
+                              order_type='limit',
+                              product_id=security['name'])
+            elif security in self.positions and security['close'] >= max(self.high[:-1]): # entered breakout level and already in position
+                # execute traiilng stop-loss order
+                # step 1: calculate previous highest price
+                # step 2: compare current price with last highest price
+                
 
 
 def main():
