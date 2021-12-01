@@ -21,16 +21,27 @@ class CoinbaseWallet(AuthBase):
             api_key, api_secret, api_pass, api_url)  # initialize client
         self.usdbalance = 0
         self.btcbalance = 0
-        self.lookback = 5  # lookback length
-        self.ceiling, self.floor = 10, 1  # upper and lower lookback limits
-        self.initialStopRisk = 0.98
+        self.initialStopRisk = 0.96
         self.trailingStopRisk = 0.9
         self.ticker = 'BTC-USD'
         self.price = 0  # price of bitcoin
+        self.initialStopPrice = 0
+        self.adjustedStopPrice = 0
         self.buyPrice = 0
         self.high = 0  # highest price once in position
         self.invested = False
         self.lastOrder = None
+
+        # self.update()
+        # print(self.auth.place_limit_order(
+        #     product_id=self.ticker, side='sell', price=60000, size=self.btcbalance))
+
+        # # self.auth.cancel_all()
+        # self.openOrders = list(self.auth.get_orders())
+        # print(json.dumps(self.openOrders, indent=2))
+
+        orders = list(self.auth.get_fills(product_id=self.ticker))[0]
+        print(f'last order:\n{json.dumps(orders, indent=2)}')
 
     def round_decimals_down(self, number: float, decimals: int = 2):
         """
@@ -56,7 +67,13 @@ class CoinbaseWallet(AuthBase):
                     float(account['available']), 8)
 
     def update(self):
-        self.lastOrder = list(self.auth.get_fills(product_id=self.ticker))[-1]
+        self.openOrders = list(self.auth.get_orders())
+        # print(json.dumps(self.openOrders, indent=2))
+
+        self.lastOrder = list(self.auth.get_fills(product_id=self.ticker))[0]
+
+        if self.lastOrder['side'] == 'buy':
+            self.invested = True
         if self.lastOrder['side'] == 'sell':  # update position after selling
             sellPrice = self.round_decimals_down(
                 float(self.lastOrder['price']), 2)
@@ -84,52 +101,49 @@ class CoinbaseWallet(AuthBase):
 
         delta = (self.price - openPrice) / openPrice
 
-        print(f'invested = {self.invested}')
+        print(
+            f'Account balance = ${self.usdbalance + (self.btcbalance * self.price)}')
         print(f'Current price is ${self.price}')
         print(f'24h gain/loss(%) = {"{:.2f}".format(delta*100)}%')
 
         # if not in position and price drops at least 5%
-        if not self.invested and delta < -.05:
+        if not self.invested and delta < 0:
             # execute a buy order
             order_size = self.round_decimals_down(
                 ((self.usdbalance - 1) / self.price), 8)
 
-            self.auth.place_market_order(
-                product_id=self.ticker, side='buy', funds=order_size)
+            print(self.auth.place_market_order(
+                product_id=self.ticker, side='buy', funds=self.usdbalance))
 
-            self.buyPrice = self.price
             self.invested = True
 
             formattedPrice = '{:.2f}'.format(self.price)
-            print(f'Bought {self.btcbalance} BTC for ${formattedPrice}!')
+            print(f'Bought {order_size} BTC for ${formattedPrice}!')
 
-        if self.invested:
-            order_size = self.btcbalance
+            # set initial stop limit order
+            self.initialStopPrice = self.round_decimals_down(
+                self.price * self.initialStopRisk, 2)
+            self.auth.place_limit_order(product_id=self.ticker,
+                                        side='sell',
+                                        price=self.initialStopPrice,
+                                        size=self.btcbalance)
+            print(
+                f'Placed new limit sell order with risk of ${self.initialStopPrice * self.btcbalance}.')
 
-            # if no open sell orders -> place new limit sell order
-            if self.lastOrder['side'] == 'buy':
-                self.initialStopPrice = self.round_decimals_down(
-                    self.buyPrice * self.initialStopRisk, 2)
-                self.auth.place_limit_order(product_id=self.ticker,
-                                            side='sell',
-                                            price=self.initialStopPrice,
-                                            size=order_size)
-                print(
-                    f'Placed new limit sell order with intial risk of ${self.initialStopPrice}.')
+        # if price continues to move beyond initial buy price -> update highest price and push trailing stop price higher
+        if self.invested and self.price > self.high and self.price * self.trailingStopRisk > self.initialStopPrice:
+            # update variables
+            self.high = self.price
+            self.adjustedStopPrice = self.high * self.trailingStopRisk
+            print(f'adjusted stop price = ${self.adjustedStopPrice}')
 
-            # if price continues to move beyond initial buy price -> update highest price and push trailing stop price higher
-            if self.price > self.high and self.price * self.trailingStopRisk > self.initialStopPrice:
-                # update variables
-                self.high = self.price
-                self.adjustedStopPrice = self.high * self.trailingStopRisk
+            # update order
+            self.auth.cancel_all()
+            self.auth.place_limit_order(
+                product_id=self.ticker, side='sell', price=self.adjustedStopPrice, size=self.btcbalance)
+            print('Price increased: Updated stop loss.')
 
-                # update order
-                self.auth.cancel_all()
-                self.auth.place_limit_order(
-                    product_id=self.ticker, side='sell', price=self.adjustedStopPrice, size=order_size)
-                print('Price increased: Updated stop loss.')
-
-        print()
+        print(f'invested = {self.invested}\n')
 
     def launch(self):
         while True:
@@ -148,7 +162,7 @@ def main():
     # initialize authenticated client
     client = CoinbaseWallet(api_key, api_secret, api_pass, api_url)
     print('Starting bot...')
-    client.launch()
+    # client.launch()
 
 
 main()
