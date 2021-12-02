@@ -1,21 +1,15 @@
 import cbpro
-from cbpro.websocket_client import WebsocketClient
 import pandas as pd
 import numpy as np
 import math
-import hmac
 import json
 import os
-import hashlib
 import time
-import datetime
 from requests.auth import AuthBase
 from dotenv import load_dotenv
 
 
 class CoinbaseWallet(AuthBase):
-    stablecoins = []
-
     def __init__(self, api_key, api_secret, api_pass, api_url):
         self.auth = cbpro.AuthenticatedClient(
             api_key, api_secret, api_pass, api_url)  # initialize client
@@ -31,14 +25,6 @@ class CoinbaseWallet(AuthBase):
         self.high = 0  # highest price once in position
         self.invested = False
         self.lastOrder = None
-
-        # self.update()
-        # print(self.usdbalance)
-        # print(self.auth.place_market_order(
-        #         product_id=self.ticker, side='buy', funds=self.usdbalance))
-
-        # orders = list(self.auth.get_fills(product_id=self.ticker))[0]
-        # print(f'last order:\n{json.dumps(orders, indent=2)}')
 
     def round_decimals_down(self, number: float, decimals: int = 2):
         """
