@@ -88,7 +88,7 @@ class CoinbaseWallet(AuthBase):
         print(f'24h gain/loss(%) = {"{:.2f}".format(delta*100)}%')
 
         # if not in position and 24h price drops at least 5%
-        if not self.invested and delta < -.02:
+        if not self.invested and delta < -0.05:
             # buy btc
             self.auth.place_market_order(
                 product_id=self.ticker, side='buy', funds=(self.usdbalance-1))
@@ -97,7 +97,7 @@ class CoinbaseWallet(AuthBase):
             self.invested = True
 
         # if in position and 24h price increases at least 5%
-        if self.invested and delta >= 0.10:
+        if self.invested and delta >= 0.05:
             # sell btc
             self.auth.place_market_order(
                 product_id=self.ticker, side='sell', size=self.btcbalance)
